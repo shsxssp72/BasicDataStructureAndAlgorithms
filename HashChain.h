@@ -5,7 +5,7 @@
 #define ERRORCODE_LIST
 enum ErrorCode_List
 {
-	underflow,overflow,success,range_error,non_existence
+	underflow,overflow,success,range_error,non_existence,duplicate
 };
 #endif
 
@@ -14,7 +14,7 @@ enum ErrorCode_List
 
 #include "MultipurposeSequence.h"
 #include "MultipurposeChain.h"
-
+constexpr int HashSize=37;
 
 template<class T>
 class HashChain: public Sequence<Chain<T> >

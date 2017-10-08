@@ -6,7 +6,7 @@
 #define ERRORCODE_LIST
 enum ErrorCode_List
 {
-	underflow,overflow,success,range_error,non_existence
+	underflow,overflow,success,range_error,non_existence,overwrite,duplicate,new_entry,unsuited
 };
 #endif
 
@@ -15,20 +15,32 @@ enum ErrorCode_List
 
 #include <cstdlib>
 #include <iostream>
-#include "Constants.h"
 
+
+constexpr int MaxSequenceLength=1000;
+constexpr int InitialSequenceSize=50;
+constexpr int NewDynamicArrayIncrement=10;
+constexpr int InsertionSortLimit_Sequence=1;
 
 template<class T>
 class Sequence
 {
 public:
 	Sequence();
+	Sequence(const Sequence<T> &another);
+	~Sequence();
+	Sequence<T> &operator =(const Sequence<T> &another);
+	T &operator [](const int subscript);
 	bool isCurrentFull() const;
 	bool isFull() const;
 	bool isEmpty() const;
 	int getSize() const;//当前空间大小
 	int getUsage() const;//已用大小
 	int getSubscriptFromData(const T &toFind);//顺序查找,假设无重复
+	int getSubscriptFromCondition(bool (*judge)(const T &));//顺序查找
+	int getSubscriptFromCondition(const int startPosition,const int endPosition,bool (*judge)(const T &));
+	int getSubscriptFromCondition(bool (*judge)(const T &,const int contrast),const int Contrast);
+	int getSubscriptFromCondition(const int startPosition,const int endPosition,bool (*judge)(const T &,const int),const int Contrast);
 	void Clear();
 	void SyncSize();
 	void Traverse(void ( *visit)(T &));
@@ -37,22 +49,27 @@ public:
 	ErrorCode_List Delete(int position);
 	ErrorCode_List DeleteFinal();
 	ErrorCode_List Extract(int position,T &output);//类似ServeAndRetrieve
+	ErrorCode_List ExtractFinal(T &output);
 	ErrorCode_List Insert(int position,const T &toWrite);//postion位置之后插入
 	ErrorCode_List Modify(int position,const T &toWrite);
 	ErrorCode_List Retrieve(int position,T &output) const;
-	ErrorCode_List Swap(int position1,int position2);
+	ErrorCode_List RetrieveFinal(T &output) const;
+	ErrorCode_List Sort(int (*cmp)(const T &a,const T &b));
+	ErrorCode_List SortPartial(int startPosition,int endPosition,int (*cmp)(const T &a,const T &b));//end为超尾
+	ErrorCode_List SwapData(int position1,int position2);
 	ErrorCode_List TransferToDesignatedSize(const int SizeToCreate);
 	ErrorCode_List Write(int position,const T &toWrite);
-	T *getPositionPointer(int position) const;
+	T *getPositionDataPointer(int position) const;
+	T *getFinalDataPointer() const;
 	int CopyOfSize;
-	//ErrorCode_List Sort();
-	//复制构造函数，操作符重载
+
 private:
 	int size;
 	int front;
 	int rear;
 	int count;
 	T *Primacy;
+	ErrorCode_List sort(T *list,int length,int startPosition,int endPosition,int (*cmp)(const T &,const T &));
 };
 
 template<class T>
@@ -64,6 +81,53 @@ Sequence<T>::Sequence()
 	count=0;
 	Primacy=new T[InitialSequenceSize];
 	CopyOfSize=size;
+}
+
+template<class T>
+Sequence<T>::~Sequence()
+{
+	delete[] Primacy;
+}
+template<class T>
+Sequence<T>::Sequence(const Sequence<T> &another)
+{
+	size=another.size;
+	rear=another.rear;
+	front=another.front;
+	count=another.count;
+	Primacy=new T[size];
+	for(int i=0;i<size;i++)
+		Primacy[i]=another.Primacy[i];
+
+}
+template<class T>
+Sequence<T> &Sequence<T>::operator =(const Sequence<T> &another)
+{
+	if(another.Primacy==Primacy)
+		return *this;
+	else
+	{
+		//此处使用了swap来利用析构函数
+		Sequence<T> tmp(another);
+		rear=another.rear;
+		front=another.front;
+		count=another.count;
+		T *PrimacyCopy=Primacy;
+		tmp.Primacy=PrimacyCopy;
+		Primacy=another.Primacy;
+		return *this;
+	}
+}
+template<class T>
+T &Sequence<T>::operator [](const int subscript)
+{
+	int realPosition=subscript+front;
+	if(isEmpty())
+		return Primacy[front];
+	else if(realPosition<front||realPosition>=rear)
+		return Primacy[front];
+	else
+		return Primacy[realPosition];
 }
 
 template<class T>
@@ -100,11 +164,11 @@ bool Sequence<T>::isFull() const
 		else
 		{
 			T *NewArray=new T[size+NewDynamicArrayIncrement];
-			if(NewArray==NULL)
+			if(NewArray==nullptr)
 				return true;
 			else
 			{
-				delete NewArray;
+				delete[] NewArray;
 				return false;
 			}
 		}
@@ -119,15 +183,59 @@ int Sequence<T>::getSubscriptFromData(const T &toFind)
 		return -1;
 	else
 	{
+		TransferToDesignatedSize(getSize());
 		for(int i=front;i<rear;i++)
-		{
 			if(Primacy[i]==toFind)
-			{
 				return i;
-			}
-		}
 		return -1;
 	}
+}
+
+
+template<class T>
+int Sequence<T>::getSubscriptFromCondition(const int startPosition,const int endPosition,bool (*judge)(const T &))
+{
+	if(isEmpty())
+		return -1;
+	else if(endPosition<startPosition||endPosition>count||startPosition<0)
+		return -1;
+	else
+	{
+		TransferToDesignatedSize(getSize());
+		for(int i=startPosition;i<endPosition;i++)
+			if(judge(Primacy[i]))
+				return i;
+		return -1;
+	}
+}
+
+template<class T>
+int Sequence<T>::getSubscriptFromCondition(bool (*judge)(const T &))
+{
+	return getSubscriptFromCondition(front,rear,judge);
+}
+
+template<class T>
+int Sequence<T>::getSubscriptFromCondition(const int startPosition,const int endPosition,bool (*judge)(const T &,const int),const int Contrast)
+{
+	if(isEmpty())
+		return -1;
+	else if(endPosition<startPosition||endPosition>count||startPosition<0)
+		return -1;
+	else
+	{
+		if(front!=0)
+			TransferToDesignatedSize(getSize());
+		for(int i=startPosition;i<endPosition;i++)
+			if(judge(Primacy[i],Contrast))
+				return i;
+		return -1;
+	}
+}
+template<class T>
+int Sequence<T>::getSubscriptFromCondition(bool (*judge)(const T &,const int),const int Contrast)
+{
+	return getSubscriptFromCondition(front,rear,judge,Contrast);
 }
 
 template<class T>
@@ -137,8 +245,9 @@ void Sequence<T>::Clear()
 	rear=0;
 	count=0;
 	front=0;
-	delete[] Primacy;
-	*Primacy=new T[InitialSequenceSize];
+	if(Primacy==nullptr)
+		delete[] Primacy;
+	Primacy=new T[InitialSequenceSize];
 	CopyOfSize=0;
 }
 
@@ -200,7 +309,7 @@ ErrorCode_List Sequence<T>::AddFirst(const T &toWrite)
 	}
 	else if(size==0)
 	{
-		if(Primacy!=NULL)
+		if(Primacy!=nullptr)
 		{
 			std::cerr<<"Inner Error -Exception occurs when processing."<<std::endl;
 			std::cerr<<"Data may be lost."<<std::endl;
@@ -227,6 +336,7 @@ ErrorCode_List Sequence<T>::AddFinal(const T &toWrite)
 	{
 		Primacy[rear]=toWrite;
 		rear++;
+		count++;
 	}
 	else if(size>0&&rear>=size)
 	{
@@ -260,7 +370,7 @@ ErrorCode_List Sequence<T>::AddFinal(const T &toWrite)
 	}
 	else if(size==0)
 	{
-		if(Primacy!=NULL)
+		if(Primacy!=nullptr)
 		{
 			std::cerr<<"Inner Error -Exception occurs when processing."<<std::endl;
 			std::cerr<<"Data may be lost."<<std::endl;
@@ -287,7 +397,7 @@ ErrorCode_List Sequence<T>::Delete(int position)
 	if(isEmpty())
 		return underflow;
 	else if(realPosition<front||realPosition>=rear)
-		return range_error;
+		return ErrorCode_List::range_error;
 	else
 	{
 		for(int i=realPosition;i<rear-1;i++)
@@ -322,7 +432,7 @@ ErrorCode_List Sequence<T>::Extract(int position,T &output)
 	if(isEmpty())
 		return underflow;
 	else if(realPosition<front||realPosition>=rear)
-		return range_error;
+		return ErrorCode_List::range_error;
 	else
 	{
 		output=Primacy[position];
@@ -336,6 +446,20 @@ ErrorCode_List Sequence<T>::Extract(int position,T &output)
 		return success;
 	}
 }
+template<class T>
+ErrorCode_List Sequence<T>::ExtractFinal(T &output)
+{
+	if(isEmpty())
+		return underflow;
+	else
+	{
+		output=Primacy[rear-1];
+		rear--;
+		count--;
+	}
+	SyncSize();
+	return success;
+}
 
 template<class T>
 ErrorCode_List Sequence<T>::Insert(int position,const T &toWrite)
@@ -344,7 +468,7 @@ ErrorCode_List Sequence<T>::Insert(int position,const T &toWrite)
 	if(isEmpty())
 		return underflow;
 	else if(realPosition<front||realPosition>=rear)
-		return range_error;
+		return ErrorCode_List::range_error;
 	else
 	{
 		if(size>0&&front>0)
@@ -390,7 +514,7 @@ ErrorCode_List Sequence<T>::Insert(int position,const T &toWrite)
 		}
 		else if(size==0)
 		{
-			if(Primacy!=NULL)
+			if(Primacy!=nullptr)
 			{
 				std::cerr<<"Inner Error -Exception occurs when processing."<<std::endl;
 				std::cerr<<"Data may be lost."<<std::endl;
@@ -418,7 +542,7 @@ ErrorCode_List Sequence<T>::Modify(int position,const T &toWrite)
 	if(isEmpty())
 		return underflow;
 	else if(realPosition<front||realPosition>=rear)
-		return range_error;
+		return ErrorCode_List::range_error;
 	else
 	{
 		Primacy[realPosition]=toWrite;
@@ -433,7 +557,7 @@ ErrorCode_List Sequence<T>::Retrieve(int position,T &output) const
 	if(isEmpty())
 		return underflow;
 	else if(realPosition<front||realPosition>=rear)
-		return range_error;
+		return ErrorCode_List::range_error;
 	else
 	{
 		output=Primacy[realPosition];
@@ -442,14 +566,103 @@ ErrorCode_List Sequence<T>::Retrieve(int position,T &output) const
 }
 
 template<class T>
-ErrorCode_List Sequence<T>::Swap(int position1,int position2)
+ErrorCode_List Sequence<T>::RetrieveFinal(T &output) const
+{
+	if(isEmpty())
+		return underflow;
+	else
+		output=Primacy[rear-1];
+	return success;
+}
+
+template<class T>
+ErrorCode_List Sequence<T>::sort(T *list,int length,int startPosition,int endPosition,int (*cmp)(const T &,const T &))
+{
+	if(front!=0)
+		TransferToDesignatedSize(getSize());//对齐数据
+	int sortLength=endPosition-startPosition;
+	if(startPosition<0||endPosition>length||startPosition>=endPosition)
+		return ErrorCode_List::range_error;
+	else if(sortLength<=InsertionSortLimit_Sequence)
+	{
+		for(int i=startPosition+1;i<endPosition;i++)
+			if(cmp(list[i-1],list[i])>0)//负数定义为a比b小
+			{
+				T storage=list[i];
+				int j=0;
+				for(j=i-1;j>=startPosition&&cmp(list[j],storage)>0;j--)
+					list[j+1]=list[j];
+				list[j+1]=storage;
+			}
+	}
+	else
+	{
+		int halfLength=sortLength/2;
+		T *sublist1=new T[halfLength];
+		T *sublist2=new T[halfLength+1];
+		int sublength1=halfLength;
+		int sublength2=sortLength-halfLength;
+
+		for(int i=startPosition;i<sublength1+startPosition;i++)
+			sublist1[i-startPosition]=list[i];
+		for(int i=sublength1+startPosition;i<endPosition;i++)
+			sublist2[i-sublength1-startPosition]=list[i];
+
+		sort(sublist1,sublength1,0,sublength1,cmp);
+		sort(sublist2,sublength2,0,sublength2,cmp);
+
+		for(int i=0,j=0,k=startPosition;;k++)
+		{
+			if(cmp(sublist1[i],sublist2[j])<0)
+			{
+				if(i==sublength1-1)
+				{
+					for(;j<sublength2;j++,k++)
+						list[k]=sublist2[j];
+					break;
+				}
+				list[k]=sublist1[i];
+				i++;
+			}
+			else
+			{
+				if(j==sublength2-1)
+				{
+					for(;i<sublength1;i++,k++)
+						list[k]=sublist1[i];
+					break;
+				}
+				list[k]=sublist2[j];
+				j++;
+			}
+		}
+
+		delete[] sublist1;
+		delete[] sublist2;
+	}
+	return success;
+}
+
+template<class T>
+ErrorCode_List Sequence<T>::Sort(int (*cmp)(const T &,const T &))
+{
+	return sort(Primacy,count,0,count,cmp);
+}
+
+template<class T>
+ErrorCode_List Sequence<T>::SortPartial(int startPosition,int endPosition,int (*cmp)(const T &,const T &))
+{
+	return sort(Primacy,count,startPosition,endPosition,cmp);
+}
+template<class T>
+ErrorCode_List Sequence<T>::SwapData(int position1,int position2)
 {
 	int realPosition1=position1+front;
 	int realPosition2=position2+front;
 	if(isEmpty())
 		return underflow;
 	else if(realPosition1<front||realPosition1>=rear||realPosition2<front||realPosition2>=rear)
-		return range_error;
+		return ErrorCode_List::range_error;
 	else
 	{
 		T tmp=Primacy[realPosition1];
@@ -491,7 +704,7 @@ ErrorCode_List Sequence<T>::Write(int position,const T &toWrite)
 	if(isEmpty())
 		return underflow;
 	else if(realPosition<front||realPosition>=rear)
-		return range_error;
+		return ErrorCode_List::range_error;
 	else
 	{
 		Primacy[position]=toWrite;
@@ -499,12 +712,14 @@ ErrorCode_List Sequence<T>::Write(int position,const T &toWrite)
 }
 
 template<class T>
-T *Sequence<T>::getPositionPointer(int position) const
+T *Sequence<T>::getPositionDataPointer(int position) const
 {
 	return Primacy+position;
 }
-/*
-template <class T>
-Sequence<T>:
-*/
+
+template<class T>
+T *Sequence<T>::getFinalDataPointer() const
+{
+	return &Primacy[rear-1];
+}
 #endif //BASICDATASTRUCTUREANDALGORITHMS_MULTIPURPOSESEQUENCE_H
